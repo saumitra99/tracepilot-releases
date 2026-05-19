@@ -42,6 +42,7 @@ pick_bin_dir() {
 }
 
 main() {
+    local email_arg="${1:-}"
     command -v curl >/dev/null 2>&1 || err "curl is required"
     command -v tar  >/dev/null 2>&1 || err "tar is required"
 
@@ -83,6 +84,20 @@ main() {
 
     info "starting daemon (file-watcher mode, no system changes)"
     "$bin_dir/tracepilot" start || err "daemon start failed (see logs above)"
+
+    if [ -n "${TRACEPILOT_INVITE:-}" ]; then
+        if [ -z "$email_arg" ]; then
+            err "TRACEPILOT_INVITE is set but no email was supplied. Re-run as: TRACEPILOT_INVITE='<token>' bash -s -- you@company.com"
+        fi
+        info "attaching to workspace as $email_arg"
+        if ! "$bin_dir/tracepilot" login "$TRACEPILOT_INVITE" --email "$email_arg"; then
+            err "attach failed — daemon is running in local-only mode. Re-run: tracepilot login <token> --email $email_arg"
+        fi
+        info "attached → team dashboard: https://app.tracepilot.in"
+    else
+        info "no invite token provided; daemon will run in local-only mode."
+        info "To attach later: tracepilot login <invite-token> --email you@company.com"
+    fi
 
     info "done — open http://localhost:4321"
     info "uninstall: tracepilot uninstall"
