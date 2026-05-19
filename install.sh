@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # Tracepilot one-line installer.
-#   curl -fsSL https://raw.githubusercontent.com/saumitra99/tracepilot-desktop-tracker/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/saumitra99/tracepilot-releases/main/install.sh | bash
 #
-# Detects OS/arch, fetches the latest release tarball from GitHub,
+# Detects OS/arch, fetches the latest release tarball from this repo,
 # installs `tracepilot` + `tracepilotd` to /usr/local/bin (falls back
 # to ~/.local/bin if not writable), then starts the daemon in
 # file-watcher mode (no system changes).
 set -euo pipefail
 
-REPO="saumitra99/tracepilot-desktop-tracker"
+REPO="saumitra99/tracepilot-releases"
 BIN_DIR_PREFERRED="/usr/local/bin"
 BIN_DIR_FALLBACK="$HOME/.local/bin"
 
