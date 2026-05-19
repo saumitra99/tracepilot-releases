@@ -60,7 +60,9 @@ main() {
 
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
-    curl -fsSL "$asset_url" | tar -xz -C "$tmp"
+    # `--strip-components=1` flattens the top-level `tracepilot-vX.Y.Z-<target>/`
+    # directory the release workflow creates inside each tarball.
+    curl -fsSL "$asset_url" | tar -xz --strip-components=1 -C "$tmp"
 
     [ -x "$tmp/tracepilot" ] || err "tracepilot binary missing in tarball"
     [ -x "$tmp/tracepilotd" ] || err "tracepilotd binary missing in tarball"
