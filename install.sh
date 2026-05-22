@@ -2,7 +2,7 @@
 # Tracepilot one-line installer.
 #   curl -fsSL https://raw.githubusercontent.com/saumitra99/tracepilot-releases/main/install.sh | bash
 #
-# Detects OS/arch, fetches the latest release tarball from this repo,
+# Detects OS/arch, fetches the latest release tarball from GitHub,
 # installs `tracepilot` + `tracepilotd` to /usr/local/bin (falls back
 # to ~/.local/bin if not writable), then starts the daemon in
 # file-watcher mode (no system changes).
@@ -29,6 +29,28 @@ detect_target() {
         x86_64|amd64)  arch=x86_64 ;;
         *) err "unsupported arch: $arch" ;;
     esac
+
+    # On Linux x86_64, use the legacy binary if glibc < 2.38.
+    # The standard binary requires GLIBC_2.38 (from the ort/fastembed ONNX
+    # Runtime prebuilt). The legacy binary targets glibc 2.17 and omits the
+    # on-device embedder; all other features work normally.
+    if [ "$os" = "linux" ] && [ "$arch" = "x86_64" ]; then
+        local glibc_ver glibc_major glibc_minor
+        glibc_ver=$(ldd --version 2>/dev/null | awk 'NR==1{print $NF}')
+        glibc_major=$(printf '%s' "$glibc_ver" | cut -d. -f1)
+        glibc_minor=$(printf '%s' "$glibc_ver" | cut -d. -f2)
+        if [ -z "$glibc_major" ] || [ -z "$glibc_minor" ]; then
+            info "could not detect glibc version — using legacy binary (safe default)"
+            printf '%s-%s-legacy' "$arch" "$os"
+            return
+        fi
+        if [ "$glibc_major" -lt 2 ] || { [ "$glibc_major" -eq 2 ] && [ "$glibc_minor" -lt 38 ]; }; then
+            info "glibc ${glibc_ver} < 2.38 — using legacy binary (on-device embedder disabled)"
+            printf '%s-%s-legacy' "$arch" "$os"
+            return
+        fi
+    fi
+
     printf '%s-%s' "$arch" "$os"
 }
 
@@ -42,7 +64,6 @@ pick_bin_dir() {
 }
 
 main() {
-    local email_arg="${1:-}"
     command -v curl >/dev/null 2>&1 || err "curl is required"
     command -v tar  >/dev/null 2>&1 || err "tar is required"
 
@@ -60,9 +81,7 @@ main() {
 
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
-    # `--strip-components=1` flattens the top-level `tracepilot-vX.Y.Z-<target>/`
-    # directory the release workflow creates inside each tarball.
-    curl -fsSL "$asset_url" | tar -xz --strip-components=1 -C "$tmp"
+    curl -fsSL "$asset_url" | tar -xz -C "$tmp"
 
     [ -x "$tmp/tracepilot" ] || err "tracepilot binary missing in tarball"
     [ -x "$tmp/tracepilotd" ] || err "tracepilotd binary missing in tarball"
@@ -86,20 +105,6 @@ main() {
 
     info "starting daemon (file-watcher mode, no system changes)"
     "$bin_dir/tracepilot" start || err "daemon start failed (see logs above)"
-
-    if [ -n "${TRACEPILOT_INVITE:-}" ]; then
-        if [ -z "$email_arg" ]; then
-            err "TRACEPILOT_INVITE is set but no email was supplied. Re-run as: TRACEPILOT_INVITE='<token>' bash -s -- you@company.com"
-        fi
-        info "attaching to workspace as $email_arg"
-        if ! "$bin_dir/tracepilot" login "$TRACEPILOT_INVITE" --email "$email_arg"; then
-            err "attach failed — daemon is running in local-only mode. Re-run: tracepilot login <token> --email $email_arg"
-        fi
-        info "attached → team dashboard: https://app.tracepilot.in"
-    else
-        info "no invite token provided; daemon will run in local-only mode."
-        info "To attach later: tracepilot login <invite-token> --email you@company.com"
-    fi
 
     info "done — open http://localhost:4321"
     info "uninstall: tracepilot uninstall"
