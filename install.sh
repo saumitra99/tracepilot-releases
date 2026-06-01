@@ -6,8 +6,12 @@
 # installs `tracepilot` + `tracepilotd` (+ the optional `tracepilot-agent`
 # local runner) to /usr/local/bin (falls back to ~/.local/bin if not
 # writable), best-effort builds the runner's Docker runtime image, writes
-# the runner launcher to ~/.tracepilot/scripts/, then starts the daemon in
-# file-watcher mode (no system changes).
+# the runner launcher to ~/.tracepilot/scripts/, then starts the daemon.
+#
+# AI-usage tracking is OFF by default (runner-only: dashboard + runner
+# controller, no proxy, no ~/.claude file-watchers). Pass --with-tracking
+# to also run the Tracepilot usage tracker:
+#   curl -fsSL .../install.sh | sh -s -- --with-tracking
 set -euo pipefail
 
 REPO="saumitra99/tracepilot-releases"
@@ -250,6 +254,16 @@ main() {
     command -v curl >/dev/null 2>&1 || err "curl is required"
     command -v tar  >/dev/null 2>&1 || err "tar is required"
 
+    # Tracking choice. Default OFF (runner-only). `--with-tracking` opts into
+    # the full Tracepilot usage tracker (proxy + ~/.claude watchers).
+    local with_tracking=0 arg
+    for arg in "$@"; do
+        case "$arg" in
+            --with-tracking) with_tracking=1 ;;
+            *) warn "ignoring unknown argument: $arg" ;;
+        esac
+    done
+
     local target tag asset_url tmp bin_dir image_tag
     target="$(detect_target)"
     info "platform: $target"
@@ -302,8 +316,18 @@ main() {
         esac
     fi
 
-    info "starting daemon (file-watcher mode, no system changes)"
-    "$bin_dir/tracepilot" start || err "daemon start failed (see logs above)"
+    # Non-disruptive: if a daemon is already running, install the new bits but
+    # leave the running process untouched — never kill/restart it from here.
+    # Only start one when none is running, honoring the tracking choice.
+    if pgrep -x tracepilotd >/dev/null 2>&1; then
+        info "existing Tracepilot daemon detected — left running untouched; restart it yourself to pick up the new version."
+    elif [ "$with_tracking" = "1" ]; then
+        info "starting daemon with AI-usage tracking enabled"
+        "$bin_dir/tracepilot" start || err "daemon start failed (see logs above)"
+    else
+        info "starting daemon (runner-only — no AI-usage tracking)"
+        "$bin_dir/tracepilot" start --no-track || err "daemon start failed (see logs above)"
+    fi
 
     info "done — open http://localhost:4321"
     if [ -x "$tmp/tracepilot-agent" ]; then
